@@ -1,6 +1,9 @@
+import os
 import socket
 import json
-from vector_test import QUERY_VECTOR
+
+from vector_test import QUERY_VECTOR,QUERY_VECTOR1,QUERY_VECTOR2
+from embedding import EmbeddingService
 
 SOCKET_PATH = "/tmp/coordinator.sock"
 
@@ -12,15 +15,18 @@ def send_query(query_vector):
         client.shutdown(socket.SHUT_WR)
 
         response_data = receive_full_data(client)
-        if response_data:
-            response = json.loads(response_data)
-            print("推荐结果:")
-            for item in response:
-                text = item[0]
-                similarity = item[1]
-                print(f"Text: {text}, Similarity: {similarity}")
-        else:
-            print("No response received from server")
+        try:
+            results = json.loads(response_data)
+
+            for item in results:
+                text = item["Text"]
+                similarity = item["Similarity"]
+                print(f"Text: {text}")
+                print(f"Similarity: {similarity}")
+        except KeyError as e:
+            print(f"Key error: {e} - Ensure response structure matches expected format.")
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON response: {e}")
 
 def receive_full_data(connection):
     chunks = []
@@ -32,10 +38,18 @@ def receive_full_data(connection):
     return ''.join(chunks)
 
 if __name__ == "__main__":
+    api_key = os.environ.get("ARK_API_KEY")
+    model_name = os.getenv('EP')
+
+    embedding_service = EmbeddingService(api_key)
     # real data
-    # query_vector = embedding_service.get_embeddings(model_name, ["广州"])
+    # v = embedding_service.get_embeddings(model_name, ["广州"])
+    # v1 = embedding_service.get_embeddings(model_name, ["房"])
+    # v2 = embedding_service.get_embeddings(model_name, ["港澳台"])
+    # query_vector = [v, v1, v2]
 
     # test data
-    query_vector = QUERY_VECTOR
+    query_vector = [QUERY_VECTOR,QUERY_VECTOR1,QUERY_VECTOR2]
 
+    # 支持不定向量查询
     send_query(query_vector)

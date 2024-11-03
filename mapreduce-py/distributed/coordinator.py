@@ -10,7 +10,7 @@ from worker import WORKER_SOCKET_PATH
 from embedding import EmbeddingService
 
 SOCKET_PATH = "/tmp/coordinator.sock"
-TOP_N = 3  # 推荐结果的数量
+TOP_N = 2 # 推荐结果的数量
 
 def create_unix_socket(path):
     if os.path.exists(path):
@@ -21,18 +21,9 @@ def create_unix_socket(path):
     return server
 
 def distribute_map_tasks(data, query_vector):
-    """分配Map任务到Worker进程"""
-    num_chunks = os.cpu_count() or 1
-    chunk_size = max(1, len(data) // num_chunks)
-    chunks = [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
+    results = communicate_with_worker('map', data, query_vector)
 
-    map_results = []
-    with Pool(os.cpu_count()) as pool:
-        # 向每个 Worker 分配一个 Map 任务
-        for chunk in chunks:
-            response = communicate_with_worker('map', chunk, query_vector)
-            map_results.extend(response)
-    return map_results
+    return results
 
 def distribute_reduce_task(map_results):
     """分配Reduce任务到Worker进程"""
@@ -42,10 +33,8 @@ def distribute_reduce_task(map_results):
 import numpy as np
 
 def communicate_with_worker(task_type, data_chunk, query_vector=None):
-    """与 worker 通信"""
     data_chunk = [(item_id, vector.tolist()) if isinstance(vector, np.ndarray) else (item_id, vector) for item_id, vector in data_chunk]
 
-    # 如果 query_vector 不为 None，则将其转换为列表
     if query_vector is not None:
         query_vector = query_vector.tolist() if isinstance(query_vector, np.ndarray) else query_vector
 
@@ -54,7 +43,6 @@ def communicate_with_worker(task_type, data_chunk, query_vector=None):
         'data': data_chunk,
     }
 
-    # 仅在 task_type 不是 'reduce' 时包含 query_vector
     if query_vector is not None:
         request['query_vector'] = query_vector
 
@@ -63,11 +51,9 @@ def communicate_with_worker(task_type, data_chunk, query_vector=None):
     client.sendall(json.dumps(request).encode('utf-8'))
     client.shutdown(socket.SHUT_WR)
 
-    # Receive full response from the worker
     response_data = receive_full_data(client)
     client.close()
 
-    # Debug: Check if response_data is empty
     if not response_data:
         print("Error: No data received from worker.")
         return []
@@ -92,9 +78,20 @@ def receive_full_data(connection):
 def handle_client_connection(connection, data):
     try:
         received_data = receive_full_data(connection)
-        query_vector = np.array(json.loads(received_data))
+        query_vectors = np.array(json.loads(received_data))
 
-        map_results = distribute_map_tasks(data, query_vector)
+        if query_vectors.ndim == 1:
+            query_vectors = np.expand_dims(query_vectors, axis=0)
+
+        if query_vectors.shape[1] != 4096:
+            raise ValueError("All vectors must be of length 4096")
+
+        map_results = []
+
+        for query_vector in query_vectors:
+            results = distribute_map_tasks(data, query_vector)
+            map_results.extend(results)
+
         top_results = distribute_reduce_task(map_results)
 
         response = json.dumps(top_results).encode()
@@ -105,8 +102,9 @@ def handle_client_connection(connection, data):
     finally:
         connection.close()
 
+
+
 def server_process(data):
-    """Coordinator服务器进程"""
     server = create_unix_socket(SOCKET_PATH)
     print("Coordinator server started.")
     try:

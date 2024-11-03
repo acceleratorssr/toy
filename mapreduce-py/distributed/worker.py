@@ -7,7 +7,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 WORKER_SOCKET_PATH = "/tmp/worker.sock"
-TOP_N = 3  # 推荐结果的数量
+TOP_N = 2  # 推荐结果的数量
 
 def create_unix_socket(path):
     if os.path.exists(path):
@@ -22,13 +22,29 @@ def cosine_similarities(vector, matrix):
     return cosine_similarity(vector, matrix).flatten()
 
 def map_function(data_chunk, query_vector):
+    print("get map task")
     ids, vectors = zip(*data_chunk)
     similarities = cosine_similarities(query_vector, np.array(vectors))
     return list(zip(ids, similarities))
 
-def reduce_function(results):
-    sorted_results = sorted(results, key=lambda x: x[1], reverse=True)
-    return sorted_results[:TOP_N]
+def reduce_function(map_results):
+    similarity_scores = {}
+
+    for result in map_results:
+        data_id, similarity = result
+        if data_id in similarity_scores:
+            similarity_scores[data_id] += similarity
+        else:
+            similarity_scores[data_id] = similarity
+
+    total_vectors = len(map_results)
+    average_similarity = {data_id: score / total_vectors for data_id, score in similarity_scores.items()}
+
+    sorted_results = sorted(average_similarity.items(), key=lambda x: x[1], reverse=True)
+
+    formatted_results = [{"Text": data_id, "Similarity": similarity} for data_id, similarity in sorted_results[:TOP_N]]
+
+    return formatted_results
 
 def handle_coordinator_request(connection):
     try:
@@ -63,7 +79,6 @@ def receive_full_data(connection):
     return ''.join(chunks)
 
 def worker_process():
-    """Worker服务器进程"""
     server = create_unix_socket(WORKER_SOCKET_PATH)
     print("Worker server started.")
     try:

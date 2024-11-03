@@ -8,13 +8,6 @@ class EmbeddingService:
         self.client = Ark(api_key=api_key, base_url=base_url, timeout=timeout, max_retries=max_retries)
 
     def get_embeddings(self, model_name, input_texts):
-        """
-        获取文本的嵌入向量，并确保返回的向量长度为4096。
-
-        :param model_name: 使用的模型名称
-        :param input_texts: 需要被向量化的文本列表
-        :return: 长度为4096的向量结果列表
-        """
         try:
             resp = self.client.embeddings.create(model=model_name, input=input_texts)
 
@@ -30,21 +23,16 @@ class EmbeddingService:
             raise
 
     def _validate_vector(self, vector):
-        """
-        验证向量的长度，如果不符合则返回默认值。
-        :param vector: 输入向量
-        :return: 长度为4096的向量
-        """
         if len(vector) == 4096:
             return vector
         else:
             print(f"Warning: Vector length {len(vector)} does not match expected length 4096.")
-            return [0.0] * 4096  # 返回长度为4096的默认向量
+            return [0.0] * 4096
 
 # eg
 if __name__ == "__main__":
     api_key = os.environ.get("ARK_API_KEY")
-    model_name = os.getenv('RP')
+    model_name = os.getenv('EP')
 
     embedding_service = EmbeddingService(api_key)
 
